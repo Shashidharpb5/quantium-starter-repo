@@ -1,81 +1,92 @@
-import csv
-import os
 import pandas as pd
-import dash
-from dash import dcc, html
-import plotly.graph_objects as go
+import plotly.express as px
+from dash import Dash, dcc, html, Input, Output
 
-# === Step 1: Prepare CSV data ===
-DATA_DIRECTORY = "./data"
-OUTPUT_FILE_PATH = "./formatted_data.csv"
+# Load the formatted data
+df = pd.read_csv("formatted_data.csv")
+df['date'] = pd.to_datetime(df['date'])
 
-with open(OUTPUT_FILE_PATH, "w", newline="") as output_file:
-    writer = csv.writer(output_file)
-    writer.writerow(["sales", "date", "region"])  # header
+# App Setup
+external_stylesheets = ['https://fonts.googleapis.com/css2?family=Poppins&display=swap']
+app = Dash(__name__, external_stylesheets=external_stylesheets)
+app.title = "Pink Morsel Sales Visualiser"
 
-    for file_name in os.listdir(DATA_DIRECTORY):
-        if file_name.endswith(".csv"):
-            with open(f"{DATA_DIRECTORY}/{file_name}", "r") as input_file:
-                reader = csv.reader(input_file)
-                next(reader)  # skip header
-                for row in reader:
-                    product, raw_price, quantity, date, region = row
-                    if product == "pink morsel":
-                        price = float(raw_price[1:])  # remove $
-                        sale = price * int(quantity)
-                        writer.writerow([sale, date, region])
+# App Layout
+app.layout = html.Div([
+    html.H1("Quantium Pink Morsel Sales Analysis", style={
+        'textAlign': 'center',
+        'color': '#880e4f',
+        'fontFamily': 'Poppins'
+    }),
 
-# === Step 2: Load and clean CSV for Dash ===
-df = pd.read_csv(OUTPUT_FILE_PATH)
+    html.Div([
+        html.Label("Filter by Region:", style={
+            'fontSize': '18px',
+            'marginRight': '10px',
+            'fontWeight': 'bold',
+            'color': '#37474f'
+        }),
+        dcc.RadioItems(
+            id='region-filter',
+            options=[
+                {'label': 'All', 'value': 'all'},
+                {'label': 'North', 'value': 'north'},
+                {'label': 'South', 'value': 'south'},
+                {'label': 'East', 'value': 'east'},
+                {'label': 'West', 'value': 'west'}
+            ],
+            value='all',
+            inline=True,
+            style={'fontSize': '16px'}
+        )
+    ], style={'textAlign': 'center', 'marginBottom': '20px'}),
 
-# Force correct datatypes
-df["date"] = pd.to_datetime(df["date"], errors="coerce")
-df["sales"] = pd.to_numeric(df["sales"], errors="coerce")
-df.dropna(subset=["date", "sales"], inplace=True)
+    dcc.Graph(id='sales-line-graph'),
 
-# Group by date
-daily_sales = df.groupby("date")["sales"].sum().reset_index()
+    html.Div("Created by Shashy 💡 | Quantium Data Challenge", style={
+        'textAlign': 'center',
+        'marginTop': '40px',
+        'color': '#757575',
+        'fontFamily': 'Poppins'
+    })
+], style={'padding': '40px'})
 
-# === Step 3: Build Dash app ===
-app = dash.Dash(__name__)
 
-fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=daily_sales["date"],
-    y=daily_sales["sales"],
-    mode="lines+markers",
-    name="Daily Sales"
-))
-
-# Add vertical line for Jan 15, 2021
-fig.add_shape(
-    type="line",
-    x0="2021-01-15", x1="2021-01-15",
-    y0=0, y1=daily_sales["sales"].max(),
-    line=dict(color="red", width=2, dash="dash")
+# Callback to update chart based on radio selection
+@app.callback(
+    Output('sales-line-graph', 'figure'),
+    [Input('region-filter', 'value')]
 )
+def update_chart(selected_region):
+    filtered_df = df if selected_region == 'all' else df[df['region'] == selected_region]
 
-fig.add_annotation(
-    x="2021-01-15",
-    y=daily_sales["sales"].max(),
-    text="Price Increase",
-    showarrow=True,
-    arrowhead=2,
-    ax=0,
-    ay=-40
-)
+    fig = px.line(
+        filtered_df,
+        x='date',
+        y='sales',
+        title="Pink Morsel Daily Sales Over Time",
+        labels={'date': 'Date', 'sales': 'Sales ($)'},
+        markers=True
+    )
 
-fig.update_layout(
-    title="Pink Morsel Daily Sales Over Time",
-    xaxis_title="Date",
-    yaxis_title="Sales ($)",
-    template="plotly_white"
-)
+    from datetime import datetime
 
-app.layout = html.Div(children=[
-    html.H1("Quantium Pink Morsel Sales Analysis", style={"textAlign": "center"}),
-    dcc.Graph(figure=fig)
-])
+    fig.add_vline(
+        x=datetime(2021, 1, 15),
+        line_width=2,
+        line_dash="dash",
+        line_color="red"
+    )
 
-if __name__ == "__main__":
+    fig.update_layout(
+        title_x=0.5,
+        font=dict(family="Poppins", size=14),
+        plot_bgcolor="#f8f8f8",
+        hovermode='x unified'
+    )
+    return fig
+
+
+# Run server
+if __name__ == '__main__':
     app.run(debug=True)
